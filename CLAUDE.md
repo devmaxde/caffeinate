@@ -29,8 +29,12 @@ The system aggregates a lot of noisy data but may **not have all the data**. Som
 | `support_overview` | Temporal + frequency | Sort by date, count by product |
 | `revenue_goals_hitl` | Human-in-the-loop | Recognize missing data, suggest who to ask |
 | `it_urgent` | Filtered search | Filter by priority, categorize issues |
+| `clients_by_industry` | On-the-fly aggregation | Group by category, compare distributions |
+| `multihop_client_contact` | Multi-hop resolution | Client → rep → manager chain |
 
 All criteria are validated against actual data (string-matched and brute-force verified).
+
+**Criteria should be minimal** — only check what was explicitly asked. Don't add criteria for information the question didn't ask for (e.g. don't check "total count" if the question was "which are the top X").
 
 ## Evaluation criteria (from Qontext team)
 
