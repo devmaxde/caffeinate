@@ -1,8 +1,8 @@
 //! Cross-reference inference + entity adjacency graph.
 //!
 //! Two paths to edges:
-//! - `infer_edges_llm`  — sends group summaries to Claude via `rig`,
-//!   parses JSON edge list. Requires `ANTHROPIC_API_KEY`.
+//! - `infer_edges_llm`  — sends group summaries to Gemini via `rig`,
+//!   parses JSON edge list. Requires `GEMINI_API_KEY`.
 //! - `heuristic_edges`  — links groups that share an id-ish key. No network.
 //!
 //! `EntityGraph::build(groups, edges)` materializes an adjacency map keyed
