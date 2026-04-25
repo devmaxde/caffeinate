@@ -16,28 +16,36 @@ evals:
     criteria:
       - "Mentions POC status is 'accepted'"
       - "Mentions current product is 'Personalization Engine'"
-      - "Mentions they are in the Education industry"
       - "Mentions engagement is about helping them build a direct-to-consumer channel"
       - "References Aryan Mishra (emp_0047) as the business representative"
     relevant_sources:
       - file: Business_and_Management/clients.json
-        filter: "business_name='Aguirre LLC' (client_id=9c12e3c9-7bee-4582-8fae-46a9524ec63c)"
+        filter:
+          EnterpriseBench: "business_name='Aguirre LLC' (client_id=9c12e3c9-7bee-4582-8fae-46a9524ec63c)"
+          EnterpriseBench2: "companyName='Aguirre LLC' (clientId=9c12e3c9-7bee-4582-8fae-46a9524ec63c)"
       - file: Collaboration_tools/conversations.json
-        filter: "sender_emp_id=emp_0047 OR recipient_emp_id=emp_0047 (10 conversations)"
+        filter:
+          EnterpriseBench: "sender_emp_id=emp_0047 OR recipient_emp_id=emp_0047 (10 conversations)"
+          EnterpriseBench2: "senderEmployeeId=emp_0047 OR recipientEmployeeId=emp_0047 (10 conversations)"
       - file: Human_Resource_Management/Employees/employees.json
-        filter: "emp_id=emp_0047 (Aryan Mishra, Business Development)"
+        filter:
+          EnterpriseBench: "emp_id=emp_0047 (Aryan Mishra, Business Development)"
+          EnterpriseBench2: "employeeId=emp_0047 (Aryan Mishra, Business Development)"
 
   - id: top_products
     question: "What are our most selling products?"
     criteria:
       - "Notes that all 1351 products have exactly 10 sales each (uniform distribution)"
       - "Differentiates by category: Electronics leads (4900 sales), then Home&Kitchen (4480), then Computers&Accessories (3750)"
-      - "Mentions total of 13510 sales records"
     relevant_sources:
       - file: Customer_Relation_Management/sales.json
-        filter: "all 13510 records, aggregated by product_id"
+        filter:
+          EnterpriseBench: "all 13510 records, aggregated by product_id"
+          EnterpriseBench2: "all 13510 records, aggregated by productId"
       - file: Customer_Relation_Management/products.json
-        filter: "all 1351 products for name/category lookup"
+        filter:
+          EnterpriseBench: "all 1351 products, product_name + category"
+          EnterpriseBench2: "all 1351 products, productName + category"
 
   - id: support_overview
     question: "Give me an overview of latest support questions"
@@ -48,9 +56,13 @@ evals:
       - "Summarizes common issue themes from the chat transcripts"
     relevant_sources:
       - file: Customer_Relation_Management/Customer Support/customer_support_chats.json
-        filter: "all 1000 records, sorted by interaction_date desc"
+        filter:
+          EnterpriseBench: "all 1000 records, sorted by interaction_date desc"
+          EnterpriseBench2: "all 1000 records, sorted by interactionDate desc"
       - file: Customer_Relation_Management/products.json
-        filter: "matching product_ids for product details"
+        filter:
+          EnterpriseBench: "matching product_id for product details"
+          EnterpriseBench2: "matching productId for product details"
 
   - id: revenue_goals_hitl
     question: "What are the revenue goals for the next quarter?"
@@ -60,19 +72,55 @@ evals:
       - "Suggests asking specific people who might know, by name and role (e.g. Inan Patel - Management with 15 reportees, Alex Marshall - Business Development with 12 reportees)"
     relevant_sources:
       - file: Human_Resource_Management/Employees/employees.json
-        filter: "category=Management (82 employees), sorted by reportee count"
+        filter:
+          EnterpriseBench: "category=Management (82 employees), sorted by reportee count"
+          EnterpriseBench2: "department=Management (82 employees), sorted by reportee count"
       - file: Collaboration_tools/conversations.json
-        filter: "~247 conversations mentioning 'revenue target/goal' — contain dollar figures but no explicit quarterly targets"
+        filter:
+          EnterpriseBench: "~95 conversations mentioning 'revenue' — contain dollar figures but no explicit quarterly targets"
+          EnterpriseBench2: "~95 conversations mentioning 'revenue' — contain dollar figures but no explicit quarterly targets"
 
   - id: it_urgent
     question: "What are the most urgent open IT issues?"
     criteria:
-      - "Focuses on high-priority tickets (73 out of 163 total)"
+      - "Focuses on high-priority tickets (73 tickets)"
       - "Identifies VPN connectivity as the most common issue (45 of 73 high-priority tickets)"
       - "Identifies email access as the second most common issue (27 of 73)"
       - "References specific employees involved (who raised / who is assigned)"
     relevant_sources:
       - file: IT_Service_Management/it_tickets.json
-        filter: "priority='high' (73 tickets)"
+        filter:
+          EnterpriseBench: "priority='high' (73 tickets)"
+          EnterpriseBench2: "priority='high' (73 tickets)"
       - file: Human_Resource_Management/Employees/employees.json
-        filter: "matching emp_ids from raised_by_emp_id and emp_id fields"
+        filter:
+          EnterpriseBench: "matching emp_ids from raised_by_emp_id and emp_id fields"
+          EnterpriseBench2: "matching employeeIds from raisedByEmployeeId and employeeId fields"
+
+  - id: clients_by_industry
+    question: "How do our clients differ by industry?"
+    criteria:
+      - "Identifies Education (48) and Hospitality (46) as the largest industries, Entertainment (35) and Healthcare (35) as the smallest"
+      - "Breaks down POC acceptance rates: Healthcare leads at 66% (23/35), while Retail lags at 45% (17/38)"
+      - "Highlights top product per industry (e.g. Loyalty Program Integration dominates Manufacturing with 8/39, Voice Commerce Assistant leads Logistics with 8/39)"
+    relevant_sources:
+      - file: Business_and_Management/clients.json
+        filter:
+          EnterpriseBench: "all 400 records, grouped by industry"
+          EnterpriseBench2: "all 400 records, grouped by domain"
+
+  - id: multihop_client_contact
+    question: "Tell me about Aguirre LLC. Who manages the relationship and who do they report to?"
+    criteria:
+      - "Identifies Aryan Mishra (emp_0047, Business Development) as the business representative"
+      - "Identifies Don Anderson (emp_0592, Business Development) as Aryan's manager via reports_to chain"
+      - "Mentions client contact person is Ashley Vega (external, not an employee)"
+    relevant_sources:
+      - file: Business_and_Management/clients.json
+        filter:
+          EnterpriseBench: "business_name='Aguirre LLC'"
+          EnterpriseBench2: "companyName='Aguirre LLC'"
+      - file: Human_Resource_Management/Employees/employees.json
+        filter:
+          EnterpriseBench: "emp_id=emp_0047 (Aryan Mishra) and emp_id=emp_0592 (Don Anderson)"
+          EnterpriseBench2: "employeeId=emp_0047 (Aryan Mishra) and employeeId=emp_0592 (Don Anderson)"
