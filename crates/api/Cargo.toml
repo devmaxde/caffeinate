@@ -1,0 +1,26 @@
+[package]
+name = "qontext-api"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "qontext-api"
+path = "src/main.rs"
+
+[dependencies]
+qontext-core.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+uuid.workspace = true
+dotenvy.workspace = true

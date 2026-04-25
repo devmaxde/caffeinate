@@ -1,0 +1,24 @@
+[package]
+name = "qontext-fs"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "qontext-fs"
+path = "src/main.rs"
+
+[dependencies]
+qontext-core.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+dotenvy.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+fuser = { workspace = true }
+libc = "0.2"

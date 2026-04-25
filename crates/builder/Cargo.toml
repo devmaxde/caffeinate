@@ -1,0 +1,31 @@
+[package]
+name = "qontext-builder"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "qontext-builder"
+path = "src/main.rs"
+
+[dependencies]
+qontext-core.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+notify.workspace = true
+reqwest.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+csv = "1"
+rig-core = "0.35"
+dotenvy.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true }
