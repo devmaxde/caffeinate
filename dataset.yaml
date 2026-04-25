@@ -2,8 +2,13 @@
 # All of EnterpriseBench/ is the input corpus for every question (Inazuma.co, a fictional D2C tech enterprise).
 # Each eval is a triplet: (question, criteria, relevant_sources).
 # Noise is implicit: everything in EnterpriseBench/ NOT listed under relevant_sources.
+#
+# EnterpriseBench2/ contains the same data with renamed fields (camelCase + semantic shifts).
+# Both corpora should produce the same eval results — testing format agnosticism.
 
-input_base: EnterpriseBench/
+input_bases:
+  - EnterpriseBench/
+  - EnterpriseBench2/
 
 evals:
   - id: client_status
