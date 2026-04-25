@@ -14,8 +14,9 @@
 use crate::groups::EntityGroup;
 use crate::providers::Entry;
 use crate::relate::Edge;
+use qontext_core::model::FileNode;
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
 const MAX_NEIGHBOURS_PER_GROUP: usize = 20;
@@ -239,6 +240,81 @@ fn truncate(s: &str, n: usize) -> String {
         t.push('…');
         t
     }
+}
+
+pub const MAXI_ROOT: &str = "/maxi";
+
+/// Render every entry as a `FileNode` rooted at `/maxi/<group>/<idx>_<id>.md`.
+/// Also synthesizes parent dir nodes so the tree is browsable in evmap.
+pub fn render_all_as_nodes(graph: &MaxiGraph) -> Vec<(String, FileNode)> {
+    let pairs: Vec<(String, String, String, String)> = graph
+        .store
+        .groups
+        .par_iter()
+        .enumerate()
+        .flat_map(|(gi, g)| {
+            let group_slug = sanitize(&g.name);
+            let source_path = g.source_path.clone();
+            (0..g.entries.len())
+                .into_par_iter()
+                .map(move |ei| {
+                    let id_slug = sanitize(&g.entries[ei].id);
+                    let path = format!("{}/{}/{:08}_{}.md", MAXI_ROOT, group_slug, ei, id_slug);
+                    let md = render_entry_md(graph, gi, ei);
+                    (path, md, source_path.clone(), g.entries[ei].id.clone())
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    let mut children_of: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (path, _, _, _) in &pairs {
+        register_ancestors(&mut children_of, path);
+    }
+
+    let mut out: Vec<(String, FileNode)> = Vec::with_capacity(pairs.len() + children_of.len());
+    for (dir, kids) in children_of {
+        out.push((dir, FileNode::new_dir(kids.into_iter().collect())));
+    }
+    for (path, md, source_path, entry_id) in pairs {
+        let node = FileNode::new_file(md)
+            .with_meta("kind", "maxi")
+            .with_meta("format", "markdown")
+            .with_meta("source_file", source_path)
+            .with_meta("entry_id", entry_id);
+        out.push((path, node));
+    }
+    out
+}
+
+fn register_ancestors(children_of: &mut BTreeMap<String, BTreeSet<String>>, path: &str) {
+    let parent = match path.rfind('/') {
+        Some(0) => "/".to_string(),
+        Some(i) => path[..i].to_string(),
+        None => "/".to_string(),
+    };
+    children_of
+        .entry(parent.clone())
+        .or_default()
+        .insert(path.to_string());
+    if parent != "/" {
+        register_ancestors(children_of, &parent);
+    }
+}
+
+fn sanitize(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        out.push('_');
+    }
+    out
 }
 
 /// Render every entry in parallel. Key = "<source_path>#<id>".
