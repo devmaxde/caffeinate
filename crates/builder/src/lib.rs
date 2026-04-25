@@ -6,12 +6,14 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 pub mod groups;
+pub mod maxi;
 pub mod providers;
 pub mod relate;
 pub mod render;
 pub mod source;
 
 pub use groups::EntityGroup;
+pub use maxi::{render_all_md, render_entry_md, AdjEntry, EntityStore, GroupIdx, MaxiGraph};
 pub use relate::{Edge, EdgeRef, EntityGraph, EntityNode};
 pub use render::{scan, IndexResult, Pair};
 

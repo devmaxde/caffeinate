@@ -8,7 +8,8 @@
 //! - Group + adjacency dump → stderr + target/entities.txt
 //! - LLM step skipped unless ANTHROPIC_API_KEY is set.
 
-use qontext_builder::{relate, EntityGraph};
+use qontext_builder::{maxi, relate, EntityGraph, MaxiGraph};
+use rayon::prelude::*;
 use qontext_core::model::{FileNode, NodeKind};
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -126,6 +127,69 @@ async fn index_enterprisebench_into_graph() {
     }
     ef.write_all(adj_dump.as_bytes()).expect("write entities");
     eprintln!("\n=== entity adjacency dumped to {} ===", ent_path.display());
+
+    // ---- maxi-graph ----
+    let t0 = std::time::Instant::now();
+    let maxi_graph = MaxiGraph::from_legacy(res.groups, &edges);
+    let build_ms = t0.elapsed().as_millis();
+    let total_entries: usize = maxi_graph
+        .store
+        .groups
+        .iter()
+        .map(|g| g.entries.len())
+        .sum();
+    eprintln!(
+        "\n=== maxi-graph built in {}ms: {} groups, {} entries indexed ===",
+        build_ms,
+        maxi_graph.store.groups.len(),
+        total_entries
+    );
+
+    let t0 = std::time::Instant::now();
+    let md_map = maxi::render_all_md(&maxi_graph);
+    let render_ms = t0.elapsed().as_millis();
+    eprintln!(
+        "rendered {} markdown views in {}ms (rayon)",
+        md_map.len(),
+        render_ms
+    );
+    assert_eq!(md_map.len(), total_entries);
+
+    let cust_path = "/Customer_Relation_Management/customers.json";
+    let cust_idx = maxi_graph.group_idx(cust_path).expect("customers group");
+    let sample_md = maxi::render_entry_md(&maxi_graph, cust_idx, 0);
+    eprintln!(
+        "\n=== sample maxi md: customers / {} ===\n{}",
+        maxi_graph.store.groups[cust_idx].entries[0].id, sample_md
+    );
+
+    let maxi_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/maxi");
+    std::fs::create_dir_all(&maxi_dir).ok();
+    let dumps = [
+        ("/Customer_Relation_Management/customers.json", 3),
+        ("/Customer_Relation_Management/products.json", 2),
+        ("/Human_Resource_Management/Employees/employees.json", 2),
+    ];
+    let mut written = 0usize;
+    for (path, n) in dumps {
+        if let Some(gi) = maxi_graph.group_idx(path) {
+            let g = &maxi_graph.store.groups[gi];
+            let take = n.min(g.entries.len());
+            for ei in 0..take {
+                let id = &g.entries[ei].id;
+                let md = maxi::render_entry_md(&maxi_graph, gi, ei);
+                let p = maxi_dir.join(format!("{}__{}.md", g.name, id));
+                std::fs::write(&p, &md).ok();
+                written += 1;
+            }
+        }
+    }
+    eprintln!(
+        "\n=== {} sample maxi mds written to {} ===",
+        written,
+        maxi_dir.display()
+    );
 }
 
 fn short_path(p: &str) -> String {
@@ -205,4 +269,101 @@ fn summary(n: &FileNode) -> String {
         s.push(')');
     }
     s
+}
+
+/// Independent test: scan EnterpriseBench, build maxi-graph (heuristic edges),
+/// dump every entry as Markdown to `target/maxi/<group>/<idx>_<id>.md` in parallel.
+/// Skips evmap state, so it can run alongside the other test in the same binary.
+#[test]
+fn dump_full_maxi_to_target() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../EnterpriseBench")
+        .canonicalize()
+        .expect("EnterpriseBench dir must exist");
+
+    let t0 = std::time::Instant::now();
+    let res = qontext_builder::scan(&root).expect("scan");
+    eprintln!(
+        "[dump] scan: {} groups, {} nodes in {}ms",
+        res.groups.len(),
+        res.nodes.len(),
+        t0.elapsed().as_millis()
+    );
+
+    let edges = relate::heuristic_edges(&res.groups);
+    eprintln!("[dump] {} heuristic edges", edges.len());
+
+    let t0 = std::time::Instant::now();
+    let graph = MaxiGraph::from_legacy(res.groups, &edges);
+    let total: usize = graph
+        .store
+        .groups
+        .iter()
+        .map(|g| g.entries.len())
+        .sum();
+    eprintln!(
+        "[dump] maxi built in {}ms ({} entries)",
+        t0.elapsed().as_millis(),
+        total
+    );
+
+    let out_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/maxi");
+    let _ = std::fs::remove_dir_all(&out_root);
+    std::fs::create_dir_all(&out_root).expect("mkdir target/maxi");
+    for g in &graph.store.groups {
+        std::fs::create_dir_all(out_root.join(&g.name)).expect("mkdir group");
+    }
+
+    let pairs: Vec<(usize, usize)> = graph
+        .store
+        .groups
+        .iter()
+        .enumerate()
+        .flat_map(|(gi, g)| (0..g.entries.len()).map(move |ei| (gi, ei)))
+        .collect();
+
+    let t0 = std::time::Instant::now();
+    pairs.par_iter().for_each(|&(gi, ei)| {
+        let g = &graph.store.groups[gi];
+        let id = sanitize(&g.entries[ei].id);
+        let path = out_root
+            .join(&g.name)
+            .join(format!("{:08}_{}.md", ei, id));
+        let md = qontext_builder::render_entry_md(&graph, gi, ei);
+        std::fs::write(&path, md).expect("write md");
+    });
+    let ms = t0.elapsed().as_millis();
+    eprintln!(
+        "[dump] wrote {} markdown files to {} in {}ms",
+        pairs.len(),
+        out_root.display(),
+        ms
+    );
+
+    for g in &graph.store.groups {
+        let dir = out_root.join(&g.name);
+        let count = std::fs::read_dir(&dir)
+            .map(|it| it.count())
+            .unwrap_or(0);
+        eprintln!("  [{}] {} files in {}", g.provider, count, dir.display());
+        assert_eq!(
+            count,
+            g.entries.len(),
+            "file count mismatch for group {}",
+            g.name
+        );
+    }
+}
+
+fn sanitize(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
