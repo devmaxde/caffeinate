@@ -1,0 +1,9 @@
+
+this is extracted after talking to qontext team (some of the things they will be evaluating in)
+criteria: 
+- human in the loop decide what human to ask!!!!
+- scalability (at least direction/capability)
+- input/output format agnosticism
+    - dont overfit to a certain tool schema (e.g slack vs microsoft teams)
+    - employees.json overfit (input data could be different)
+- should be consumer agnostic (claude code / http)
