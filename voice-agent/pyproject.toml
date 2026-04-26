@@ -1,0 +1,21 @@
+[project]
+name = "qontext-voice-agent"
+version = "0.1.0"
+description = "Qontext HITL Voice Agent — calls humans to fill knowledge-graph gaps"
+requires-python = ">=3.12"
+dependencies = [
+    "gradbot>=0.1.0",
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "python-dotenv",
+    # Discord bot transport (second entry point next to the FastAPI server).
+    # py-cord (NOT discord.py) — has built-in voice receive via Sinks.
+    "py-cord>=2.7.0",
+    "PyNaCl>=1.5.0",      # voice encryption (Discord requires this)
+    "numpy>=1.26",        # audio buffer math
+    "scipy>=1.11",        # resample_poly for 48k<->24k bridging
+]
+
+[project.scripts]
+voice-agent = "main:app"

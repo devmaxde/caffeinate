@@ -1,0 +1,9 @@
+.env
+.env.local
+.env.*.local
+.venv/
+__pycache__/
+*.pyc
+submitted_answers.jsonl
+.uv-cache/
+uv.lock

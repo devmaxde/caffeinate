@@ -1,0 +1,43 @@
+{
+  "queue": [
+    {
+      "question_id": "q_revenue_q2",
+      "person_name": "Inan",
+      "person_role": "Head of Management",
+      "topic": "Q2 revenue targets",
+      "context": "The Qontext system found ~95 internal conversations mentioning revenue and dollar figures (e.g. $250K budget allocations, growth percentages), but no explicit quarterly revenue target was ever stated in writing. You are listed as the most likely person to know.",
+      "ask": "What is the explicit revenue target for Q2 next quarter, in dollars?",
+      "expected_schema": {
+        "revenue_target_usd": "number",
+        "quarter": "string",
+        "confidence_source": "string"
+      }
+    },
+    {
+      "question_id": "q_user_xy_status",
+      "person_name": "Sarah",
+      "person_role": "HR Lead",
+      "topic": "employee record cleanup",
+      "context": "There's an employee record for 'X. Yamamoto' (emp_id 4421) with no activity in HR or comms data for the last 9 months. The system can't tell if they're on extended leave, left the company, or it's a stale record.",
+      "ask": "Is X. Yamamoto still with the company, on leave, or should the record be archived?",
+      "expected_schema": {
+        "status": "string (active|leave|former|unknown)",
+        "action": "string (keep|archive|escalate)",
+        "notes": "string"
+      }
+    },
+    {
+      "question_id": "q_video_2024",
+      "person_name": "Marcus",
+      "person_role": "Marketing",
+      "topic": "2024 product video reuse",
+      "context": "A folder of last year's product launch video assets (Q3 2024) has not been touched since November. Some workflows still reference these clips. Unclear whether they should be re-cut for 2026 launch or archived.",
+      "ask": "Should we re-cut the 2024 Q3 launch video assets for the upcoming 2026 launch, or archive them?",
+      "expected_schema": {
+        "decision": "string (recut|archive|hold)",
+        "reason": "string",
+        "deadline": "string"
+      }
+    }
+  ]
+}
