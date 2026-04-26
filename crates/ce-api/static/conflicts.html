@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ce — conflicts</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 1180px; margin: 0 auto; padding: 1.2rem 1rem 3rem; color: #222; }
+    h1 { margin: 0 0 0.4rem; }
+    nav { font-size: 0.9rem; color: #666; margin-bottom: 0.8rem; }
+    nav a { color: #06c; text-decoration: none; margin-right: 0.6rem; }
+    nav a:hover { text-decoration: underline; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+    #status { margin-bottom: 1rem; font-size: 0.9rem; color: #666; }
+
+    .card { border: 1px solid #e5e5e5; border-radius: 6px; padding: 0.8rem 1rem; margin-bottom: 0.9rem; background: #fff; box-shadow: 0 1px 1px rgba(0,0,0,0.02); }
+    .card.resolved { opacity: 0.4; }
+
+    .card-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+    .card-head .num { color: #999; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+    .card-head .subj-label { font-weight: 600; font-size: 1.05rem; }
+    .card-head .subj-id { color: #888; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+    .card-head .pill { background: #eef3ff; color: #06c; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
+    .card-head a.subj-link { color: #06c; text-decoration: none; }
+    .card-head a.subj-link:hover { text-decoration: underline; }
+
+    .pred-line { font-size: 0.92rem; color: #444; margin-bottom: 0.6rem; }
+    .pred-line code { background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; color: #06c; font-family: ui-monospace, monospace; }
+    .pred-line .hint { color: #888; margin-left: 0.4rem; }
+
+    .candidates { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+    .candidate { border: 1px solid #e5e5e5; border-radius: 5px; padding: 0.6rem 0.8rem; background: #fafafa; display: flex; flex-direction: column; gap: 0.35rem; }
+    .candidate.winner { border-color: #6a3; box-shadow: inset 0 0 0 1px #6a3; background: #f6fbf3; }
+    .candidate .side { font-weight: 600; font-size: 0.78rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    .candidate.winner .side { color: #2a7; }
+    .candidate .src .locator { color: #aaa; font-family: ui-monospace, monospace; font-size: 0.75rem; }
+    .candidate .value { font-size: 1rem; word-break: break-word; }
+    .candidate .value.ref { display: flex; flex-direction: column; gap: 0.1rem; }
+    .candidate .value.ref .ref-label { font-weight: 600; }
+    .candidate .value.ref .ref-id { font-family: ui-monospace, monospace; font-size: 0.82rem; color: #666; }
+    .candidate .value.ref a { color: #06c; text-decoration: none; }
+    .candidate .value.ref a:hover { text-decoration: underline; }
+    .candidate .src { color: #888; font-size: 0.78rem; }
+
+    .actions { margin-top: 0.7rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    button { padding: 0.35rem 0.8rem; cursor: pointer; border: 1px solid #999; background: white; border-radius: 4px; font-size: 0.88rem; }
+    button.keep-a { border-color: #357; color: #048; }
+    button.keep-b { border-color: #357; color: #048; }
+    button:hover:not(:disabled) { background: #eef; }
+    button:disabled { opacity: 0.4; cursor: default; }
+  </style>
+</head>
+<body>
+  <h1>Conflict inbox</h1>
+  <nav>
+    <a href="/">home</a>
+    <a href="/ui/browse">browse</a>
+    <a href="/ui/resolutions">resolutions</a>
+  </nav>
+  <div class="meta">
+    Each card below shows <strong>one entity</strong> where two sources reported
+    <strong>different values for the same field</strong>. Multi-valued fields
+    (links, tags, references) are not shown — only fields that should have
+    exactly one value, like a price or a date. Click <em>use this value</em>
+    on the side you trust; the other is marked stale (kept for audit, hidden
+    from views).
+  </div>
+  <div id="status">loading…</div>
+  <div id="rows"></div>
+
+<script>
+async function load() {
+  const r = await fetch('/conflicts');
+  const list = await r.json();
+  const rows = document.getElementById('rows');
+  rows.innerHTML = '';
+  document.getElementById('status').textContent = `${list.length} pending`;
+  // Lazy-load detail per card; concurrent for snappier first paint.
+  await Promise.all(list.map(async c => {
+    const card = await buildCard(c);
+    rows.appendChild(card);
+  }));
+}
+
+async function buildCard(c) {
+  const detail = await fetch(`/conflicts/${c.id}`).then(r => r.json()).catch(() => null);
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.dataset.id = c.id;
+  if (!detail) {
+    card.innerHTML = `<div class="card-head"><span class="num">#${c.id}</span> load failed</div>`;
+    return card;
+  }
+  const subjLink = detail.subject_type
+    ? `<a class="subj-link" href="/ui/browse#${encodeURIComponent(detail.subject_type)}/${encodeURIComponent(detail.subject)}">open ↗</a>`
+    : '';
+  const subjLabelText = detail.subject_label || '(no label)';
+  const winner = recommendedSide(detail.fact_a, detail.fact_b);
+  card.innerHTML = `
+    <div class="card-head">
+      <span class="num">#${c.id}</span>
+      <span class="subj-label">${escapeHtml(subjLabelText)}</span>
+      <span class="subj-id">${escapeHtml(detail.subject)}</span>
+      ${detail.subject_type ? `<span class="pill">${escapeHtml(detail.subject_type)}</span>` : ''}
+      ${subjLink}
+    </div>
+    <div class="pred-line">two different values were recorded for <code>${escapeHtml(detail.predicate)}</code><span class="hint">${predicateHint(detail.predicate)}</span></div>
+    <div class="candidates">
+      ${candidateBlock('Value 1', detail.fact_a, winner === 'a')}
+      ${candidateBlock('Value 2', detail.fact_b, winner === 'b')}
+    </div>
+    <div class="actions">
+      <button class="keep-a">use Value 1${winner === 'a' ? ' (recommended)' : ''}</button>
+      <button class="keep-b">use Value 2${winner === 'b' ? ' (recommended)' : ''}</button>
+    </div>
+  `;
+  card.querySelector('.keep-a').addEventListener('click', () => act(card, c.id, 'a'));
+  card.querySelector('.keep-b').addEventListener('click', () => act(card, c.id, 'b'));
+  return card;
+}
+
+// Pick the side a typical user would take: higher confidence wins, then more
+// recent observation. Surfaces a hint, doesn't gate the decision.
+function recommendedSide(a, b) {
+  if (a.confidence !== b.confidence) return a.confidence > b.confidence ? 'a' : 'b';
+  if (a.observed_at !== b.observed_at) return a.observed_at > b.observed_at ? 'a' : 'b';
+  return null;
+}
+
+function candidateBlock(side, f, isWinner) {
+  const when = f.observed_at ? new Date(f.observed_at * 1000).toISOString().slice(0, 10) : '';
+  return `
+    <div class="candidate${isWinner ? ' winner' : ''}">
+      <div class="side">${side}${isWinner ? ' · recommended' : ''}</div>
+      <div class="value${f.target_type ? ' ref' : ''}">${valueHtml(f)}</div>
+      <div class="src">
+        reported by <strong>${escapeHtml(adapterLabel(f.adapter))}</strong>
+        · ${(f.confidence * 100).toFixed(0)}% confidence
+        ${when ? '· seen ' + when : ''}
+        ${f.locator ? '<br><span class="locator">at ' + escapeHtml(f.locator) + '</span>' : ''}
+      </div>
+    </div>
+  `;
+}
+
+// Translate internal adapter ids into something a non-engineer can read.
+function adapterLabel(a) {
+  switch (a) {
+    case 'json': return 'a JSON file';
+    case 'csv':  return 'a CSV file';
+    case 'pdf':  return 'a PDF document';
+    case 'txt':  return 'a text file';
+    case 'md':   return 'a Markdown file';
+    case 'llm':  return 'the LLM (extracted from prose)';
+    case 'llm-resolve': return 'the LLM (cross-reference resolver)';
+    case 'alias-reconcile': return 'cross-schema alias matching';
+    default: return a;
+  }
+}
+
+function valueHtml(f) {
+  if (f.target_type) {
+    const tid = typeof f.object === 'string' ? f.object : JSON.stringify(f.object);
+    const link = `/ui/browse#${encodeURIComponent(f.target_type)}/${encodeURIComponent(tid)}`;
+    const label = f.target_label || '(no label)';
+    return `
+      <span class="ref-label"><a href="${link}" target="_blank">${escapeHtml(label)}</a></span>
+      <span class="ref-id">${escapeHtml(tid)} · <em>${escapeHtml(f.target_type)}</em></span>
+    `;
+  }
+  const v = typeof f.object === 'string' ? f.object : JSON.stringify(f.object, null, 0);
+  const trimmed = v.length > 400 ? v.slice(0, 400) + '…' : v;
+  return `<span>${escapeHtml(trimmed)}</span>`;
+}
+
+function predicateHint(p) {
+  if (p.startsWith('ref:')) {
+    return ` (link to a <em>${escapeHtml(p.slice(4))}</em>)`;
+  }
+  return '';
+}
+
+async function act(card, id, prefer) {
+  card.querySelectorAll('button').forEach(b => b.disabled = true);
+  const resp = await fetch(`/conflicts/${id}/resolve`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({prefer}),
+  });
+  if (resp.ok) {
+    card.classList.add('resolved');
+  } else {
+    alert('resolve failed: ' + resp.status);
+    card.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+load();
+</script>
+</body>
+</html>

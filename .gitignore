@@ -2,4 +2,6 @@ tasks_full.json
 target/
 .env
 .DS_Store
-EnterpriseBench/tasks/
+EnterpriseBench/tasks/ 
+md_store/
+ce.idx

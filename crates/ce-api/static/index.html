@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ce — context engine</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 760px; margin: 3rem auto; padding: 0 1rem; color: #222; line-height: 1.5; }
+    h1 { margin-bottom: 0.25rem; }
+    h2 { margin-top: 2rem; font-size: 1.05rem; color: #444; border-bottom: 1px solid #eee; padding-bottom: 0.3rem; }
+    code { background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; }
+    a { color: #06c; }
+    .card-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.7rem; margin-top: 0.5rem; }
+    .card { border: 1px solid #e5e5e5; border-radius: 6px; padding: 0.8rem 1rem; }
+    .card a { font-weight: 600; text-decoration: none; }
+    .card a:hover { text-decoration: underline; }
+    .card .desc { color: #666; font-size: 0.9rem; margin-top: 0.3rem; }
+    ul.api { line-height: 1.8; padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>ce — context engine</h1>
+  <p>Generic ingest of mixed enterprise data into a queryable fact store, with markdown views, conflict resolution, and BM25/graph retrieval.</p>
+
+  <h2>Browse</h2>
+  <div class="card-row">
+    <div class="card">
+      <a href="/ui/browse">Entity browser</a>
+      <div class="desc">Walk types → ids → facts. Like a file tree over the corpus.</div>
+    </div>
+    <div class="card">
+      <a href="/ui/conflicts">Conflict inbox</a>
+      <div class="desc">Side-by-side disagreeing facts with target labels &amp; provenance.</div>
+    </div>
+    <div class="card">
+      <a href="/ui/resolutions">Resolutions inbox</a>
+      <div class="desc">Approve / reject LLM-resolved entity references.</div>
+    </div>
+  </div>
+
+  <h2>HTTP API</h2>
+  <ul class="api">
+    <li><code>GET /entities</code> — list entity types with counts</li>
+    <li><code>GET /entities/{type}?q=&amp;offset=&amp;limit=</code> — paginated id+label list</li>
+    <li><code>GET /entities/{type}/{id}</code> — entity facts (with ref labels) + rendered markdown</li>
+    <li><code>POST /retrieve</code> — BM25 search + optional graph hops</li>
+    <li><code>GET /conflicts</code> · <code>GET /conflicts/{id}</code> · <code>POST /conflicts/{id}/resolve</code></li>
+    <li><code>GET /resolutions</code> · <code>POST /resolutions/approve</code> · <code>POST /resolutions/reject</code></li>
+    <li><code>GET /health</code></li>
+  </ul>
+</body>
+</html>

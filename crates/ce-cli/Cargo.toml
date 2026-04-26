@@ -1,0 +1,33 @@
+[package]
+name = "ce-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ce"
+path = "src/main.rs"
+
+[dependencies]
+ce-core.workspace = true
+ce-store.workspace = true
+ce-engine.workspace = true
+ce-adapters.workspace = true
+ce-extract.workspace = true
+ce-llm.workspace = true
+ce-resolve-entity.workspace = true
+ce-resolve.workspace = true
+ce-views.workspace = true
+ce-search.workspace = true
+ce-api.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+dotenvy.workspace = true
+rayon.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+indicatif = "0.17"

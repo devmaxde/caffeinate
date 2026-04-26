@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ce — browse</title>
+  <style>
+    :root {
+      --fg: #222; --muted: #666; --line: #eee; --bg: #fff;
+      --accent: #06c; --pred: #06c; --code-bg: #f4f4f4;
+      --pill-bg: #eef3ff; --pill-fg: #06c;
+    }
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; color: var(--fg); background: var(--bg); }
+    header { padding: 0.6rem 1rem; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 1rem; }
+    header h1 { margin: 0; font-size: 1rem; font-weight: 600; }
+    header nav { color: var(--muted); font-size: 0.9rem; }
+    header nav a { color: var(--accent); text-decoration: none; }
+    header nav a:hover { text-decoration: underline; }
+    main { display: grid; grid-template-columns: 18rem 1fr; min-height: calc(100vh - 3rem); }
+    aside { border-right: 1px solid var(--line); padding: 0.5rem 0; overflow-y: auto; max-height: calc(100vh - 3rem); }
+    aside .type-row { display: flex; justify-content: space-between; padding: 0.4rem 0.9rem; cursor: pointer; }
+    aside .type-row:hover { background: #f7f7f7; }
+    aside .type-row.active { background: #eef3ff; color: var(--accent); font-weight: 600; }
+    aside .type-row .count { color: var(--muted); font-size: 0.85rem; }
+    section.content { padding: 1rem 1.4rem; overflow-y: auto; max-height: calc(100vh - 3rem); }
+    .breadcrumb { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.6rem; }
+    .breadcrumb a { color: var(--accent); text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .toolbar { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; align-items: center; flex-wrap: wrap; }
+    .toolbar input[type=search] { padding: 0.3rem 0.5rem; border: 1px solid #ccc; border-radius: 4px; min-width: 14rem; }
+    .toolbar .meta { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+    button { padding: 0.3rem 0.6rem; cursor: pointer; border: 1px solid #999; background: white; border-radius: 4px; font-size: 0.85rem; }
+    button:hover { background: #eef; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    .entity-list { display: grid; gap: 0.2rem; }
+    .entity-row { display: grid; grid-template-columns: minmax(8rem, 14rem) 1fr; gap: 1rem; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); align-items: baseline; cursor: pointer; }
+    .entity-row:hover { background: #f7f7f7; }
+    .entity-row .id { font-family: ui-monospace, monospace; font-size: 0.85rem; color: #444; word-break: break-all; }
+    .entity-row .label { color: var(--fg); }
+    .entity-row .label.empty { color: #aaa; font-style: italic; }
+    .pager { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.8rem; }
+    .pager .meta { color: var(--muted); font-size: 0.85rem; }
+    .detail h2 { margin: 0.4rem 0 0.6rem; font-size: 1.3rem; }
+    .detail .pill { display: inline-block; background: var(--pill-bg); color: var(--pill-fg); padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; margin-left: 0.5rem; vertical-align: middle; }
+    .detail .sub-label { color: var(--muted); font-size: 0.95rem; margin-bottom: 0.8rem; }
+    .facts-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .facts-table th, .facts-table td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .facts-table th { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .facts-table .pred { color: var(--pred); font-family: ui-monospace, monospace; font-size: 0.85rem; word-break: break-all; }
+    .facts-table { table-layout: fixed; }
+    .facts-table .pred { width: 12rem; max-width: 12rem; }
+    .facts-table .val { font-family: ui-monospace, monospace; font-size: 0.85rem; word-break: break-word; overflow-wrap: anywhere; max-width: 100%; }
+    .facts-table .val.ref { font-family: ui-sans-serif, system-ui; }
+    .facts-table .val.ref .id { font-family: ui-monospace, monospace; font-size: 0.78rem; color: var(--muted); }
+    .facts-table .src { color: var(--muted); font-size: 0.78rem; max-width: 18rem; word-break: break-word; overflow-wrap: anywhere; white-space: normal; }
+    .facts-table a { color: var(--accent); text-decoration: none; }
+    .facts-table a:hover { text-decoration: underline; }
+    .empty-state { color: var(--muted); padding: 2rem; text-align: center; font-style: italic; }
+    section.content code { background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 3px; }
+    .section-h { font-size: 0.95rem; margin: 1.4rem 0 0.5rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .section-h .muted { color: #aaa; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .muted { color: var(--muted); font-size: 0.85rem; }
+    header form.ask { display: flex; gap: 0.4rem; flex: 1; max-width: 36rem; margin-left: auto; }
+    header form.ask input { flex: 1; padding: 0.35rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font: inherit; }
+    header form.ask button { padding: 0.35rem 0.9rem; }
+    header form.ask button:disabled { opacity: 0.5; }
+    .ask-result { border-bottom: 1px solid var(--line); background: #fafbff; padding: 0.6rem 1rem; max-height: 40vh; overflow-y: auto; }
+    .ask-result-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 0.85rem; margin-bottom: 0.4rem; }
+    .ask-result-head button { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; color: var(--muted); }
+    .ask-body pre { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0; line-height: 1.45; }
+    .ask-body.loading::after { content: '…'; }
+    .render-link { margin-left: 0.6rem; font-size: 0.85rem; padding: 0.2rem 0.5rem; border: 1px solid var(--accent); border-radius: 4px; text-decoration: none; color: var(--accent); }
+    .render-link:hover { background: var(--pill-bg); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ce browse</h1>
+    <nav>
+      <a href="/">home</a> ·
+      <a href="/ui/conflicts">conflicts</a> ·
+      <a href="/ui/resolutions">resolutions</a>
+    </nav>
+    <form id="ask-form" class="ask">
+      <input id="ask-input" type="text" placeholder="ask the graph (e.g. how many reviews does B07JW9H4J1 have?)" autocomplete="off">
+      <button type="submit" id="ask-go">ask</button>
+    </form>
+  </header>
+  <section id="ask-result" class="ask-result" hidden>
+    <div class="ask-result-head">
+      <strong>answer</strong>
+      <button id="ask-close" type="button" title="close">×</button>
+    </div>
+    <div id="ask-body"></div>
+  </section>
+  <main>
+    <aside id="types"><div class="empty-state">loading…</div></aside>
+    <section class="content">
+      <div class="breadcrumb" id="crumb"></div>
+      <div id="view"><div class="empty-state">pick a type on the left</div></div>
+    </section>
+  </main>
+
+<script>
+const state = {
+  types: [],
+  type: null,
+  q: '',
+  offset: 0,
+  limit: 100,
+  total: 0,
+  id: null,
+};
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+function setHash() {
+  const parts = [];
+  if (state.type) parts.push(state.type);
+  if (state.id) parts.push(state.id);
+  let hash = parts.length ? parts.map(encodeURIComponent).join('/') : '';
+  const params = new URLSearchParams();
+  if (state.q) params.set('q', state.q);
+  if (state.offset) params.set('offset', state.offset);
+  if (state.limit !== 100) params.set('limit', state.limit);
+  const ps = params.toString();
+  if (ps) hash += '?' + ps;
+  history.replaceState(null, '', hash ? '#' + hash : '#');
+}
+
+function readHash() {
+  const raw = location.hash.replace(/^#/, '');
+  if (!raw) { state.type = null; state.id = null; state.q = ''; state.offset = 0; return; }
+  const [pathPart, qsPart] = raw.split('?');
+  const segs = pathPart.split('/').filter(Boolean).map(decodeURIComponent);
+  state.type = segs[0] || null;
+  state.id = segs[1] || null;
+  const params = new URLSearchParams(qsPart || '');
+  state.q = params.get('q') || '';
+  state.offset = parseInt(params.get('offset') || '0', 10) || 0;
+  state.limit = parseInt(params.get('limit') || '100', 10) || 100;
+}
+
+async function loadTypes() {
+  const r = await fetch('/entities');
+  state.types = await r.json();
+  renderTypes();
+}
+
+function renderTypes() {
+  const a = document.getElementById('types');
+  if (!state.types.length) { a.innerHTML = '<div class="empty-state">no entities</div>'; return; }
+  a.innerHTML = state.types.map(t => `
+    <div class="type-row ${t.entity_type === state.type ? 'active' : ''}" data-type="${escapeHtml(t.entity_type)}">
+      <span>${escapeHtml(t.entity_type)}</span><span class="count">${t.count.toLocaleString()}</span>
+    </div>
+  `).join('');
+  a.querySelectorAll('.type-row').forEach(el => {
+    el.addEventListener('click', () => {
+      state.type = el.dataset.type;
+      state.id = null;
+      state.q = '';
+      state.offset = 0;
+      setHash();
+      route();
+    });
+  });
+}
+
+function renderCrumb() {
+  const c = document.getElementById('crumb');
+  const parts = ['<a href="#">root</a>'];
+  if (state.type) {
+    if (state.id) {
+      parts.push(`<a href="#${encodeURIComponent(state.type)}">${escapeHtml(state.type)}</a>`);
+      parts.push(escapeHtml(state.id));
+    } else {
+      parts.push(escapeHtml(state.type));
+    }
+  }
+  c.innerHTML = parts.join(' / ');
+}
+
+async function loadList() {
+  const params = new URLSearchParams();
+  if (state.q) params.set('q', state.q);
+  params.set('offset', state.offset);
+  params.set('limit', state.limit);
+  const r = await fetch(`/entities/${encodeURIComponent(state.type)}?${params.toString()}`);
+  if (!r.ok) { document.getElementById('view').innerHTML = `<div class="empty-state">load failed: ${r.status}</div>`; return; }
+  const data = await r.json();
+  state.total = data.total;
+  renderList(data);
+}
+
+function renderList(data) {
+  const v = document.getElementById('view');
+  const start = data.offset + 1;
+  const end = Math.min(data.offset + data.items.length, data.total);
+  const rows = data.items.map(it => `
+    <div class="entity-row" data-id="${escapeHtml(it.id)}">
+      <span class="id">${escapeHtml(it.id)}</span>
+      <span class="label ${it.label ? '' : 'empty'}">${it.label ? escapeHtml(it.label) : '— no label —'}</span>
+    </div>
+  `).join('');
+  v.innerHTML = `
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="filter by id…" value="${escapeHtml(state.q)}">
+      <button id="search-go">search</button>
+      <span class="meta">${start}–${end} of ${data.total.toLocaleString()}</span>
+    </div>
+    <div class="entity-list">${rows || '<div class="empty-state">no matches</div>'}</div>
+    <div class="pager">
+      <button id="prev" ${state.offset === 0 ? 'disabled' : ''}>« prev</button>
+      <button id="next" ${end >= data.total ? 'disabled' : ''}>next »</button>
+      <span class="meta">page size ${state.limit}</span>
+    </div>
+  `;
+  document.querySelectorAll('.entity-row').forEach(r => {
+    r.addEventListener('click', () => {
+      state.id = r.dataset.id;
+      setHash();
+      route();
+    });
+  });
+  document.getElementById('search').addEventListener('keydown', e => {
+    if (e.key === 'Enter') applySearch();
+  });
+  document.getElementById('search-go').addEventListener('click', applySearch);
+  document.getElementById('prev').addEventListener('click', () => { state.offset = Math.max(0, state.offset - state.limit); setHash(); loadList(); });
+  document.getElementById('next').addEventListener('click', () => { state.offset += state.limit; setHash(); loadList(); });
+}
+
+function applySearch() {
+  state.q = document.getElementById('search').value.trim();
+  state.offset = 0;
+  setHash();
+  loadList();
+}
+
+async function loadDetail() {
+  const r = await fetch(`/entities/${encodeURIComponent(state.type)}/${encodeURIComponent(state.id)}`);
+  if (!r.ok) { document.getElementById('view').innerHTML = `<div class="empty-state">load failed: ${r.status}</div>`; return; }
+  const data = await r.json();
+  renderDetail(data);
+}
+
+function renderDetail(d) {
+  const v = document.getElementById('view');
+  const grouped = {};
+  for (const f of d.facts) (grouped[f.predicate] ||= []).push(f);
+  const predKeys = Object.keys(grouped).sort();
+  const rows = predKeys.map(p => {
+    const cells = grouped[p].map(f => formatValue(f)).join('<br>');
+    const meta = grouped[p].map(f => `${escapeHtml(f.adapter)}@${f.confidence.toFixed(2)}${f.locator ? ' · ' + escapeHtml(f.locator) : ''}`).join('<br>');
+    return `<tr>
+      <td class="pred">${escapeHtml(p)}</td>
+      <td class="val${p.startsWith('ref:') ? ' ref' : ''}">${cells}</td>
+      <td class="src">${meta}</td>
+    </tr>`;
+  }).join('');
+  // Group incoming refs by source entity_type and predicate so the user can
+  // skim "47 emails point here via ref:employees" rather than 47 separate rows.
+  const inc = d.incoming || [];
+  const incGrouped = {};
+  for (const r of inc) {
+    const key = (r.subject_type || '?') + '|' + r.predicate;
+    (incGrouped[key] ||= []).push(r);
+  }
+  const incKeys = Object.keys(incGrouped).sort();
+  const incRows = incKeys.map(k => {
+    const [subjType, pred] = k.split('|');
+    const items = incGrouped[k];
+    const links = items.slice(0, 50).map(r => {
+      const link = `#${encodeURIComponent(r.subject_type)}/${encodeURIComponent(r.subject)}`;
+      const lbl = r.subject_label || r.subject;
+      return `<a href="${link}" title="${escapeHtml(r.subject)}">${escapeHtml(lbl)}</a>`;
+    }).join(', ');
+    const more = items.length > 50 ? ` <span class="muted">… +${items.length - 50} more</span>` : '';
+    return `<tr>
+      <td class="pred">${escapeHtml(subjType)} <span class="muted">via ${escapeHtml(pred)}</span></td>
+      <td class="val">${links}${more}</td>
+      <td class="src">${items.length}</td>
+    </tr>`;
+  }).join('');
+  const renderUrl = `/entities/${encodeURIComponent(d.entity_type)}/${encodeURIComponent(d.id)}/render.md`;
+  v.innerHTML = `
+    <div class="detail">
+      <h2>${escapeHtml(d.id)}<span class="pill">${escapeHtml(d.entity_type)}</span><a class="render-link" href="${renderUrl}" target="_blank" title="open AI-rendered Markdown in a new tab">render with AI ↗</a></h2>
+      ${d.label ? `<div class="sub-label">${escapeHtml(d.label)}</div>` : ''}
+      <h3 class="section-h">Attributes &amp; outgoing refs</h3>
+      <table class="facts-table">
+        <thead><tr><th>predicate</th><th>value</th><th>source</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" class="empty-state">no facts</td></tr>'}</tbody>
+      </table>
+      <h3 class="section-h">Referenced by <span class="muted">(${inc.length})</span></h3>
+      <table class="facts-table">
+        <thead><tr><th>from type</th><th>entities</th><th>count</th></tr></thead>
+        <tbody>${incRows || '<tr><td colspan="3" class="empty-state">nothing references this entity</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function formatValue(f) {
+  if (f.target_type) {
+    const tid = typeof f.object === 'string' ? f.object : JSON.stringify(f.object);
+    const link = `#${encodeURIComponent(f.target_type)}/${encodeURIComponent(tid)}`;
+    if (f.target_label) {
+      return `<a href="${link}">${escapeHtml(f.target_label)}</a> <span class="id">${escapeHtml(tid)}</span>`;
+    }
+    return `<a href="${link}">${escapeHtml(tid)}</a>`;
+  }
+  if (typeof f.object === 'string') return escapeHtml(f.object);
+  return escapeHtml(JSON.stringify(f.object));
+}
+
+function route() {
+  renderCrumb();
+  renderTypes();
+  if (state.type && state.id) {
+    loadDetail();
+  } else if (state.type) {
+    loadList();
+  } else {
+    document.getElementById('view').innerHTML = '<div class="empty-state">pick a type on the left</div>';
+  }
+}
+
+window.addEventListener('hashchange', () => { readHash(); route(); });
+
+// ---- /ask integration ----
+const askForm = document.getElementById('ask-form');
+const askInput = document.getElementById('ask-input');
+const askBtn = document.getElementById('ask-go');
+const askResult = document.getElementById('ask-result');
+const askBody = document.getElementById('ask-body');
+document.getElementById('ask-close').addEventListener('click', () => { askResult.hidden = true; });
+askForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = askInput.value.trim();
+  if (!q) return;
+  askBtn.disabled = true;
+  askBtn.textContent = 'thinking';
+  askResult.hidden = false;
+  askBody.className = 'ask-body loading';
+  askBody.innerHTML = '<pre>walking the graph</pre>';
+  try {
+    const r = await fetch('/ask', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({question: q}),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      askBody.className = 'ask-body';
+      askBody.innerHTML = `<pre>error: ${escapeHtml(t)}</pre>`;
+    } else {
+      const data = await r.json();
+      askBody.className = 'ask-body';
+      askBody.innerHTML = `<pre>${escapeHtml(data.answer || '')}</pre>`;
+    }
+  } catch (err) {
+    askBody.className = 'ask-body';
+    askBody.innerHTML = `<pre>error: ${escapeHtml(String(err))}</pre>`;
+  } finally {
+    askBtn.disabled = false;
+    askBtn.textContent = 'ask';
+  }
+});
+
+(async () => {
+  readHash();
+  await loadTypes();
+  route();
+})();
+</script>
+</body>
+</html>

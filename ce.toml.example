@@ -1,0 +1,19 @@
+# Example ce.toml. Copy to ce.toml and edit.
+# Override at runtime with:  ce ingest --llm-config path/to/ce.toml
+
+[llm]
+# provider: "lmstudio" | "openai" | "openrouter" | "gemini" | "anthropic"
+provider = "lmstudio"
+model = "google/gemma-4-26b-a4b"        # tested locally
+embed_model = "text-embedding-nomic-embed-text-v1.5"
+base_url = "http://127.0.0.1:1234/v1"   # only for lmstudio / openai-compat
+# api_key = ""                          # else CE_LLM_API_KEY / OPENAI_API_KEY / etc.
+concurrency = 4
+max_retries = 3
+timeout_secs = 60
+
+# Gemini example:
+# provider = "gemini"
+# model = "gemini-2.0-flash-exp"
+# embed_model = "text-embedding-004"
+# api_key set via env CE_LLM_API_KEY or GEMINI_API_KEY

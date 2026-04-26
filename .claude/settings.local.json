@@ -4,7 +4,9 @@
       "Bash(cargo check *)",
       "Bash(cargo build *)",
       "Bash(cargo test *)",
-      "Bash(QONTEXT_ADDR=127.0.0.1:18080 cargo run *)"
+      "Bash(QONTEXT_ADDR=127.0.0.1:18080 cargo run *)",
+      "Bash(cargo run *)",
+      "Bash(sqlite3 *)"
     ]
   }
 }

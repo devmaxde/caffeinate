@@ -1,58 +1,62 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/core",
-    "crates/fs",
-    "crates/builder",
-    "crates/api",
-    "crates/qontext",
+    "crates/ce-core",
+    "crates/ce-adapters",
+    "crates/ce-extract",
+    "crates/ce-store",
+    "crates/ce-resolve",
+    "crates/ce-views",
+    "crates/ce-search",
+    "crates/ce-engine",
+    "crates/ce-api",
+    "crates/ce-cli",
+    "crates/ce-llm",
+    "crates/ce-resolve-entity",
 ]
 
 [workspace.package]
-edition = "2021"
 version = "0.1.0"
-license = "MIT"
+edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-# shared
+ce-core = { path = "crates/ce-core" }
+ce-adapters = { path = "crates/ce-adapters" }
+ce-extract = { path = "crates/ce-extract" }
+ce-store = { path = "crates/ce-store" }
+ce-resolve = { path = "crates/ce-resolve" }
+ce-views = { path = "crates/ce-views" }
+ce-search = { path = "crates/ce-search" }
+ce-engine = { path = "crates/ce-engine" }
+ce-api = { path = "crates/ce-api" }
+ce-llm = { path = "crates/ce-llm" }
+ce-resolve-entity = { path = "crates/ce-resolve-entity" }
+
+axum = "0.7"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-anyhow = "1"
 thiserror = "1"
+anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokio = { version = "1", features = ["full"] }
-uuid = { version = "1", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-dotenvy = "0.15"
-
-# state: lock-free, eventually-consistent map. many readers, one writer.
-evmap = "10"
-# fallback in case evmap API surprises us
-arc-swap = "1"
-
-# fs
-fuser = "0.14"
-
-# builder
-notify = "6"
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+ignore = "0.4"
+csv = "1.3"
+futures = "0.3"
+pdf-extract = "0.7"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-
-# api
-axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors"] }
-
-# internal
-qontext-core = { path = "crates/core" }
-qontext-fs = { path = "crates/fs" }
-qontext-builder = { path = "crates/builder" }
-qontext-api = { path = "crates/api" }
-
-[profile.dev]
-opt-level = 0
-debug = 1
-
-[profile.release]
-opt-level = 3
-lto = "thin"
+sha2 = "0.10"
+hex = "0.4"
+dotenvy = "0.15"
+minijinja = "2"
+tantivy = "0.22"
+petgraph = "0.6"
+rayon = "1.10"
+tempfile = "3"
+toml = "0.8"
