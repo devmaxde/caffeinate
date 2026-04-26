@@ -446,12 +446,16 @@ async def api_stt(websocket: fastapi.WebSocket):
     # phrases) — using it as the final signal would cut the user off
     # mid-sentence on the first pause. The accumulator + silence-watcher
     # below replicates "user actually stopped" semantics.
+    #
+    # Default lowered from 2.5s → 1.5s so quick voice replies ("yes", "no",
+    # short confirmations) feel responsive. Callers that need longer pauses
+    # (dictation, free-form notes) can still override via the setup msg.
     try:
-        silence_threshold_s = float(first.get("silence_threshold_s", 2.5))
+        silence_threshold_s = float(first.get("silence_threshold_s", 1.5))
     except (TypeError, ValueError):
-        silence_threshold_s = 2.5
+        silence_threshold_s = 1.5
     if silence_threshold_s <= 0:
-        silence_threshold_s = 2.5
+        silence_threshold_s = 1.5
 
     upstream_headers = [("x-api-key", api_key)]
     setup_msg = json.dumps({
