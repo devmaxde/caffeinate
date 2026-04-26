@@ -15,6 +15,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -23,8 +24,11 @@ import time
 
 import dotenv
 import fastapi
-import gradbot
+import httpx
+import websockets
+from fastapi.middleware.cors import CORSMiddleware
 
+import gradbot
 import qontext_tools
 
 _HERE = pathlib.Path(__file__).parent
@@ -37,7 +41,38 @@ logger = logging.getLogger(__name__)
 DEMO_LANGUAGE = os.environ.get("DEMO_LANGUAGE", "en")
 DEMO_VOICE_ID = os.environ.get("DEMO_VOICE_ID", "YTpq7expH9539ERJ")  # Emma (en)
 
+# Gradium upstream — used by both /api/tts and /api/stt bridges. We re-read
+# the env each request so a redeploy doesn't require a process restart.
+GRADIUM_TTS_URL = os.environ.get(
+    "GRADIUM_TTS_URL", "https://eu.api.gradium.ai/api/post/speech/tts"
+)
+GRADIUM_STT_URL = os.environ.get(
+    "GRADIUM_STT_URL", "wss://eu.api.gradium.ai/api/speech/asr"
+)
+
+# Origins allowed to call the browser-facing bridge endpoints. The TanStack
+# Start dev server defaults to 5173; tweak via env for prod or alt ports.
+CORS_ALLOW_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "VOICE_BRIDGE_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if o.strip()
+]
+
 app = fastapi.FastAPI(title="Qontext Voice Agent")
+
+# CORS only for the bridge surface — gradbot's own routes are same-origin
+# and don't need it. We allow the methods/headers our two endpoints use.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    allow_credentials=False,
+)
+
 cfg = gradbot.config.from_env()
 
 
@@ -268,6 +303,263 @@ async def ws_chat(websocket: fastapi.WebSocket):
             pass
         try:
             await websocket.close()
+        except Exception:
+            pass
+
+
+# --- Browser bridge (TTS + STT) -------------------------------------------------
+#
+# These two endpoints are the integration surface for browser-side clients
+# that want Gradium voice without holding the API key client-side. They
+# proxy through Gradium and intentionally NEVER touch the gradbot session
+# loop — they're stateless and independent from /ws/chat.
+
+_TTS_MAX_TEXT_CHARS = int(os.environ.get("TTS_MAX_TEXT_CHARS", "4000"))
+
+
+@app.post("/api/tts")
+async def api_tts(payload: dict):
+    """Browser → server → Gradium TTS, returns audio/wav bytes.
+
+    Body: {"text": str, "voice_id": str|null, "language": "en"|... |null}
+    """
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return fastapi.responses.JSONResponse(
+            {"error": "text is required"}, status_code=400
+        )
+    if len(text) > _TTS_MAX_TEXT_CHARS:
+        return fastapi.responses.JSONResponse(
+            {"error": f"text exceeds {_TTS_MAX_TEXT_CHARS} chars"},
+            status_code=400,
+        )
+
+    api_key = os.environ.get("GRADIUM_API_KEY", "")
+    if not api_key:
+        return fastapi.responses.JSONResponse(
+            {"error": "voice service not configured (GRADIUM_API_KEY missing)"},
+            status_code=502,
+        )
+
+    voice_id = payload.get("voice_id") or DEMO_VOICE_ID
+    # `language` isn't a Gradium TTS field per se, but we accept it for
+    # symmetry with STT and forward future-proofing — we don't currently
+    # send it upstream.
+    body = {
+        "text": text,
+        "voice_id": voice_id,
+        "output_format": "wav",
+        "only_audio": True,
+    }
+    headers = {
+        "x-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.post(GRADIUM_TTS_URL, json=body, headers=headers)
+    except httpx.HTTPError as exc:
+        logger.warning("TTS upstream error: %r", exc)
+        return fastapi.responses.JSONResponse(
+            {"error": "tts upstream unavailable"}, status_code=502
+        )
+
+    if r.status_code >= 500:
+        logger.warning("TTS upstream %d: %s", r.status_code, r.text[:200])
+        return fastapi.responses.JSONResponse(
+            {"error": "tts upstream error", "upstream_status": r.status_code},
+            status_code=502,
+        )
+    if r.status_code == 429 or "Concurrency limit" in r.text:
+        return fastapi.responses.JSONResponse(
+            {"error": "voice service busy — try again"}, status_code=503
+        )
+    if r.status_code != 200:
+        # 4xx from upstream → surface as 400 since it's almost always
+        # a request-shape problem on our side.
+        return fastapi.responses.JSONResponse(
+            {"error": "tts request rejected", "upstream_status": r.status_code,
+             "detail": r.text[:200]},
+            status_code=400,
+        )
+
+    return fastapi.responses.Response(
+        content=r.content,
+        media_type="audio/wav",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.websocket("/api/stt")
+async def api_stt(websocket: fastapi.WebSocket):
+    """Browser ↔ server ↔ Gradium STT bridge.
+
+    Wire protocol with the browser:
+      C→S: {"type": "setup", "language": "en"}            (first JSON msg)
+      C→S: <binary frames, PCM 16-bit 24kHz mono>
+      C→S: {"type": "end"}                                (graceful close)
+      S→C: {"type": "transcript", "text": str, "final": bool}
+      S→C: {"type": "vad", "speaking": bool}              (optional)
+      S→C: {"type": "error", "code": str, "message": str}
+
+    Internally we open a Gradium STT WS, base64 the binary frames, and
+    relay text/end_text events back to the browser.
+    """
+    await websocket.accept()
+
+    api_key = os.environ.get("GRADIUM_API_KEY", "")
+    if not api_key:
+        await websocket.send_json({
+            "type": "error",
+            "code": "not_configured",
+            "message": "voice service not configured",
+        })
+        await websocket.close(code=1011)
+        return
+
+    # Wait for the client setup message before opening the upstream socket
+    # so we don't waste a Gradium session on a misbehaving client.
+    try:
+        first = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception) as exc:
+        logger.info("STT bridge: no setup from client (%r)", exc)
+        try:
+            await websocket.close(code=1002)
+        except Exception:
+            pass
+        return
+
+    if first.get("type") != "setup":
+        await websocket.send_json({
+            "type": "error",
+            "code": "protocol",
+            "message": "first message must be setup",
+        })
+        await websocket.close(code=1002)
+        return
+
+    upstream_headers = [("x-api-key", api_key)]
+    setup_msg = json.dumps({
+        "type": "setup",
+        "model_name": "default",
+        "input_format": "pcm",
+    })
+
+    try:
+        upstream = await websockets.connect(
+            GRADIUM_STT_URL,
+            additional_headers=upstream_headers,
+            open_timeout=10,
+            max_size=8 * 1024 * 1024,
+        )
+    except Exception as exc:
+        logger.warning("STT bridge: upstream connect failed: %r", exc)
+        await websocket.send_json({
+            "type": "error",
+            "code": "upstream_unavailable",
+            "message": "could not reach speech service",
+        })
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+        return
+
+    closing = asyncio.Event()
+
+    async def client_to_upstream() -> None:
+        """Pump audio + control frames from browser → Gradium."""
+        try:
+            await upstream.send(setup_msg)
+            while not closing.is_set():
+                msg = await websocket.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                # Binary audio frame.
+                if "bytes" in msg and msg["bytes"] is not None:
+                    audio_b64 = base64.b64encode(msg["bytes"]).decode("ascii")
+                    await upstream.send(json.dumps({
+                        "type": "audio",
+                        "audio": audio_b64,
+                    }))
+                    continue
+                # Text/control frame.
+                if "text" in msg and msg["text"]:
+                    try:
+                        ctrl = json.loads(msg["text"])
+                    except json.JSONDecodeError:
+                        continue
+                    if ctrl.get("type") == "end":
+                        await upstream.send(json.dumps({"type": "end_of_stream"}))
+                        break
+                    # Silently ignore other client control frames for now.
+        except Exception as exc:
+            logger.info("STT bridge: client→upstream ended: %r", exc)
+        finally:
+            closing.set()
+
+    async def upstream_to_client() -> None:
+        """Pump transcript/VAD/end frames from Gradium → browser."""
+        try:
+            async for raw in upstream:
+                if isinstance(raw, bytes):
+                    # Gradium STT shouldn't send binary, but tolerate it.
+                    continue
+                try:
+                    ev = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                t = ev.get("type")
+                if t == "text":
+                    await websocket.send_json({
+                        "type": "transcript",
+                        "text": ev.get("text", ""),
+                        "final": False,
+                    })
+                elif t == "end_text":
+                    await websocket.send_json({
+                        "type": "transcript",
+                        "text": "",
+                        "final": True,
+                    })
+                elif t == "step":
+                    # VAD: use 2s horizon as the speaking-ended indicator,
+                    # mirroring Gradium's recommended threshold.
+                    vad = ev.get("vad") or []
+                    if len(vad) >= 3:
+                        inactivity = vad[2].get("inactivity_prob", 0.0)
+                        await websocket.send_json({
+                            "type": "vad",
+                            "speaking": inactivity < 0.5,
+                        })
+                elif t == "error":
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": str(ev.get("code", "upstream_error")),
+                        "message": ev.get("message", "speech service error"),
+                    })
+                    break
+                elif t == "end_of_stream":
+                    break
+        except Exception as exc:
+            logger.info("STT bridge: upstream→client ended: %r", exc)
+        finally:
+            closing.set()
+
+    try:
+        await asyncio.gather(
+            client_to_upstream(),
+            upstream_to_client(),
+            return_exceptions=True,
+        )
+    finally:
+        try:
+            await upstream.close()
+        except Exception:
+            pass
+        try:
+            await websocket.close(code=1000)
         except Exception:
             pass
 
