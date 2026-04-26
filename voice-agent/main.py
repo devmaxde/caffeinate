@@ -439,6 +439,20 @@ async def api_stt(websocket: fastapi.WebSocket):
         await websocket.close(code=1002)
         return
 
+    # How long without a Gradium `text` event before we treat the user as
+    # done speaking and emit a single `final:true` transcript covering the
+    # full utterance. Gradium's `end_text` only marks PHRASE boundaries
+    # (it can fire several times per utterance, once per pause between
+    # phrases) — using it as the final signal would cut the user off
+    # mid-sentence on the first pause. The accumulator + silence-watcher
+    # below replicates "user actually stopped" semantics.
+    try:
+        silence_threshold_s = float(first.get("silence_threshold_s", 2.5))
+    except (TypeError, ValueError):
+        silence_threshold_s = 2.5
+    if silence_threshold_s <= 0:
+        silence_threshold_s = 2.5
+
     upstream_headers = [("x-api-key", api_key)]
     setup_msg = json.dumps({
         "type": "setup",
@@ -468,6 +482,39 @@ async def api_stt(websocket: fastapi.WebSocket):
 
     closing = asyncio.Event()
 
+    # Accumulator state shared between the two pumps and the silence-watcher.
+    # `accumulator` collects every Gradium `text` chunk received in this
+    # session — the running "what the user has said so far" that we stream
+    # back as interim transcripts. `last_text_at` is monotonic-time of the
+    # most recent chunk; the watcher uses it to decide when the user has
+    # actually stopped. `finalized` makes finalization idempotent so we
+    # don't double-emit on (silence-watcher → end → close) overlap.
+    state = {
+        "accumulator": "",
+        "last_text_at": time.monotonic(),
+        "finalized": False,
+    }
+
+    async def emit_final() -> None:
+        """Send the current accumulator as a single `final:true` transcript.
+        Idempotent — safe to call from the silence-watcher, the end handler,
+        and the close handler without producing duplicate finals.
+        """
+        if state["finalized"]:
+            return
+        state["finalized"] = True
+        text = state["accumulator"].strip()
+        if not text:
+            return
+        try:
+            await websocket.send_json({
+                "type": "transcript",
+                "text": text,
+                "final": True,
+            })
+        except Exception as exc:
+            logger.info("STT bridge: emit_final send failed: %r", exc)
+
     async def client_to_upstream() -> None:
         """Pump audio + control frames from browser → Gradium."""
         try:
@@ -491,7 +538,14 @@ async def api_stt(websocket: fastapi.WebSocket):
                     except json.JSONDecodeError:
                         continue
                     if ctrl.get("type") == "end":
-                        await upstream.send(json.dumps({"type": "end_of_stream"}))
+                        # Client says "I'm done talking" — flush whatever
+                        # we've accumulated as the final transcript before
+                        # tearing down the upstream session.
+                        await emit_final()
+                        try:
+                            await upstream.send(json.dumps({"type": "end_of_stream"}))
+                        except Exception:
+                            pass
                         break
                     # Silently ignore other client control frames for now.
         except Exception as exc:
@@ -500,7 +554,19 @@ async def api_stt(websocket: fastapi.WebSocket):
             closing.set()
 
     async def upstream_to_client() -> None:
-        """Pump transcript/VAD/end frames from Gradium → browser."""
+        """Pump transcript/VAD/end frames from Gradium → browser.
+
+        Translation rules (the important ones — see docstring on
+        silence_threshold_s above for context):
+          * `text`     → append to accumulator, emit `final:false` with the
+                         FULL accumulator so the UI sees streaming progress.
+          * `end_text` → phrase boundary, NOT utterance end. Forward as a
+                         non-final `phrase_end` event for callers that care;
+                         do NOT mark the transcript final.
+          * silence    → handled by the silence-watcher coroutine, which
+                         emits a single `final:true` transcript when no
+                         `text` events have arrived for `silence_threshold_s`.
+        """
         try:
             async for raw in upstream:
                 if isinstance(raw, bytes):
@@ -512,17 +578,29 @@ async def api_stt(websocket: fastapi.WebSocket):
                     continue
                 t = ev.get("type")
                 if t == "text":
-                    await websocket.send_json({
-                        "type": "transcript",
-                        "text": ev.get("text", ""),
-                        "final": False,
-                    })
+                    chunk = ev.get("text", "") or ""
+                    if chunk:
+                        # Gradium emits chunks like "Hello", " world", "."
+                        # — concat directly so token spacing is preserved.
+                        state["accumulator"] += chunk
+                        state["last_text_at"] = time.monotonic()
+                        # Reset the finalized latch only if we already
+                        # emitted a final and the user resumed speaking
+                        # (rare, but possible if the silence-watcher fired
+                        # and the user kept talking on the same WS).
+                        if state["finalized"]:
+                            state["finalized"] = False
+                            state["accumulator"] = chunk
+                        await websocket.send_json({
+                            "type": "transcript",
+                            "text": state["accumulator"],
+                            "final": False,
+                        })
                 elif t == "end_text":
-                    await websocket.send_json({
-                        "type": "transcript",
-                        "text": "",
-                        "final": True,
-                    })
+                    # Phrase boundary — not utterance end. Surface as a
+                    # distinct event for callers that want it (none today),
+                    # but do NOT mark the transcript final.
+                    await websocket.send_json({"type": "phrase_end"})
                 elif t == "step":
                     # VAD: use 2s horizon as the speaking-ended indicator,
                     # mirroring Gradium's recommended threshold.
@@ -541,19 +619,46 @@ async def api_stt(websocket: fastapi.WebSocket):
                     })
                     break
                 elif t == "end_of_stream":
+                    # Upstream is done — flush final before exiting.
+                    await emit_final()
                     break
         except Exception as exc:
             logger.info("STT bridge: upstream→client ended: %r", exc)
         finally:
             closing.set()
 
+    async def silence_watcher() -> None:
+        """Emit `final:true` once `silence_threshold_s` passes without a new
+        Gradium `text` chunk AND we have something accumulated. Polls every
+        250 ms so the latency floor is well below the 2.5s threshold.
+        """
+        try:
+            while not closing.is_set():
+                await asyncio.sleep(0.25)
+                if state["finalized"]:
+                    continue
+                if not state["accumulator"].strip():
+                    continue
+                idle = time.monotonic() - state["last_text_at"]
+                if idle >= silence_threshold_s:
+                    await emit_final()
+        except Exception as exc:
+            logger.info("STT bridge: silence-watcher ended: %r", exc)
+
     try:
         await asyncio.gather(
             client_to_upstream(),
             upstream_to_client(),
+            silence_watcher(),
             return_exceptions=True,
         )
     finally:
+        # Last-chance flush in case neither pump emitted final (e.g. the
+        # client closed the socket abruptly without sending {"type":"end"}).
+        try:
+            await emit_final()
+        except Exception:
+            pass
         try:
             await upstream.close()
         except Exception:
